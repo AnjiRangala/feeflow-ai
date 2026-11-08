@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from typing import Annotated
+import os
+import secrets
+import time
 
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 app = FastAPI(
@@ -11,6 +15,25 @@ app = FastAPI(
     version="1.0.0",
     description="Local, explainable rules baseline. Synthetic ML experiments are not used for predictions.",
 )
+AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "")
+RATE_LIMIT = int(os.getenv("AI_RATE_LIMIT_PER_MINUTE", "60"))
+_requests: dict[str, list[float]] = {}
+
+
+@app.middleware("http")
+async def protect_service(request: Request, call_next):
+    if request.url.path != "/health" and AI_SERVICE_TOKEN:
+        authorization = request.headers.get("authorization", "")
+        if not secrets.compare_digest(authorization, f"Bearer {AI_SERVICE_TOKEN}"):
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    key = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    recent = [stamp for stamp in _requests.get(key, []) if now - stamp < 60]
+    if len(recent) >= RATE_LIMIT:
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+    recent.append(now)
+    _requests[key] = recent
+    return await call_next(request)
 
 
 class RiskFeatures(BaseModel):

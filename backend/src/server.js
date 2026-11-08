@@ -3,7 +3,7 @@ import { connectDatabase } from './config/database.js';
 import { config } from './config/env.js';
 import * as models from './models/index.js';
 import { createMockMessageProvider } from './services/mock-message-provider.js';
-import { createOtpDelivery } from './services/otp-delivery.js';
+import { createInvitationDelivery, createOtpDelivery } from './services/otp-delivery.js';
 import { startReminderScheduler } from './services/reminders.js';
 
 try {
@@ -11,12 +11,14 @@ try {
   await models.Reminder.init();
   await models.CounsellorTask.init();
   await models.RiskAssessment.init();
+  await models.Invitation.init();
   const auditLog = (event) => console.info(JSON.stringify(event));
   const messageProvider = createMockMessageProvider(auditLog);
   const app = createApp({
     config,
     models: { ...models, connection: models.User.db },
     deliverOtp: createOtpDelivery(config),
+    deliverInvitation: createInvitationDelivery(config),
     messageProvider,
     auditLog
   });

@@ -10,6 +10,8 @@ import FeeAssistantPage from './pages/FeeAssistantPage.jsx';
 import ParentDashboard from './pages/ParentDashboard.jsx';
 import ParentPaymentPage from './pages/ParentPaymentPage.jsx';
 import ReminderCenterPage from './pages/ReminderCenterPage.jsx';
+import UserManagementPage from './pages/UserManagementPage.jsx';
+import ActivateAccountPage from './pages/ActivateAccountPage.jsx';
 const AccountsDashboardPage = lazy(() => import('./pages/AccountsDashboardPage.jsx'));
 const RefundCalculatorPage = lazy(() => import('./pages/RefundCalculatorPage.jsx'));
 const AiRiskMonitorPage = lazy(() => import('./pages/AiRiskMonitorPage.jsx'));
@@ -48,6 +50,7 @@ export default function App() {
       {checkingSession ? <LoadingSpinner /> : (
         <Routes>
           <Route path="/login" element={<LoginPage onAuthenticated={onAuthenticated} user={user} />} />
+          <Route path="/activate" element={<ActivateAccountPage />} />
           <Route path="/" element={user ? <DashboardLayout onSignOut={onSignOut} user={user} /> : <Navigate to="/login" replace />}>
             <Route index element={user?.role === 'parent' ? <ParentDashboard /> : user?.role === 'counsellor' ? <Navigate to="/ai-risk" replace /> : user ? <Suspense fallback={<LoadingSpinner />}><AccountsDashboardPage user={user} /></Suspense> : <Navigate to="/login" replace />} />
             <Route path="fees" element={user?.role === 'parent' || user?.role === 'accounts' ? <FeeLedgerPage user={user} /> : <Navigate to="/" replace />} />
@@ -56,6 +59,7 @@ export default function App() {
             {user?.role === 'accounts' && <Route path="reminders" element={<ReminderCenterPage />} />}
             {user?.role === 'accounts' && <Route path="refunds" element={<Suspense fallback={<LoadingSpinner />}><RefundCalculatorPage /></Suspense>} />}
             {user?.role === 'accounts' && <Route path="assistant" element={<FeeAssistantPage />} />}
+            {user?.role === 'accounts' && <Route path="user-management" element={<UserManagementPage />} />}
             {(user?.role === 'accounts' || user?.role === 'counsellor') && <Route path="ai-risk" element={<Suspense fallback={<LoadingSpinner />}><AiRiskMonitorPage user={user} /></Suspense>} />}
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

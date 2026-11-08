@@ -12,6 +12,7 @@ import {
 import { AppError, asyncHandler } from '../lib/errors.js';
 import { validate } from '../lib/validation.js';
 import { createAuthenticate } from '../middleware/authenticate.js';
+import { activateInvitedUser } from '../services/user-provisioning.js';
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254).transform((email) => email.toLowerCase()),
@@ -22,8 +23,12 @@ const verifyOtpSchema = z.object({
   challengeId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid verification challenge'),
   code: z.string().regex(/^\d{6}$/, 'Verification code must contain six digits')
 }).strict();
+const activationSchema = z.object({
+  token: z.string().min(40).max(100),
+  password: z.string().min(12).max(128)
+}).strict();
 
-export function createAuthRouter({ User, OtpChallenge, config, deliverOtp, logOtp = console.info }) {
+export function createAuthRouter({ User, OtpChallenge, Invitation, config, deliverOtp, logOtp = console.info }) {
   const router = Router();
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -99,6 +104,11 @@ export function createAuthRouter({ User, OtpChallenge, config, deliverOtp, logOt
       accessToken: signAccessToken(user, config.JWT_SECRET, config.JWT_EXPIRES_IN),
       user: toPublicUser(user)
     });
+  }));
+
+  router.post('/activate', validate(activationSchema), asyncHandler(async (req, res) => {
+    const user = await activateInvitedUser({ User, Invitation }, req.body.token, req.body.password);
+    res.status(200).json({ user, message: 'Account activated. You can now sign in.' });
   }));
 
   const authenticate = createAuthenticate({ User, jwtSecret: config.JWT_SECRET });

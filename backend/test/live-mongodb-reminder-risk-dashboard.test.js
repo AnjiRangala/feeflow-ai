@@ -318,7 +318,8 @@ test('real MongoDB reminder, AI risk, counsellor, and dashboard verification', a
       .filter(({ status, outstandingPaise }) => status === 'overdue' && outstandingPaise > 0)
       .reduce((sum, row) => sum + row.outstandingPaise, 0);
     assert.equal(dashboard.summary.overdueAmountPaise, expectedOverdue);
-    assert.equal(new Set(dashboard.rows.map(({ studentId }) => studentId)).size, expected.activeStudents);
+    const studentsWithFeePlans = new Set(plans.map(({ studentId }) => studentId));
+    assert.equal(new Set(dashboard.rows.map(({ studentId }) => studentId)).size, studentsWithFeePlans.size);
     const [refundStats, reminderStats, assessmentRecords, taskRecords] = await Promise.all([
       models.Refund.aggregate([
         { $match: { studentId: { $in: activeIds }, status: { $in: ['pending_review', 'approved', 'rejected'] } } },

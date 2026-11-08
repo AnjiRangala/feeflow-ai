@@ -3,6 +3,8 @@ import { AppError } from '../lib/errors.js';
 import { getInstallmentStatus, requirePaise } from '../lib/fee-ledger.js';
 import { createMockGatewayCallback, verifyMockGatewayCallback } from './mock-payment-gateway.js';
 import { syncInstallmentReminders } from './reminders.js';
+import { createRazorpayOrder } from './payment-provider.js';
+import { verifyRazorpayPaymentSignature } from './payment-provider.js';
 
 const ORDER_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -21,11 +23,14 @@ function publicOrder(order) {
     currency: 'INR',
     status: order.status,
     expiresAt: order.expiresAt,
-    transactionId: order.transactionId
+    transactionId: order.transactionId,
+    provider: order.provider,
+    providerOrderId: order.providerOrderId,
+    razorpayKeyId: order.razorpayKeyId ?? null
   };
 }
 
-export async function createParentPaymentOrder(models, parent, installmentNumber, now = new Date()) {
+export async function createParentPaymentOrder(models, parent, installmentNumber, now = new Date(), config = {}) {
   if (parent.role !== 'parent' || !parent.studentId) {
     throw new AppError(403, 'Only a parent account can create a parent payment order');
   }
@@ -43,6 +48,14 @@ export async function createParentPaymentOrder(models, parent, installmentNumber
   const amountPaise = installment.amountPaise - installment.paidAmountPaise;
   if (amountPaise < 1) throw new AppError(409, 'This instalment is already paid');
 
+  const provider = config.PAYMENT_PROVIDER === 'razorpay' ? 'razorpay' : 'mock';
+  const providerOrder = provider === 'razorpay'
+    ? await createRazorpayOrder({
+      amountPaise,
+      receipt: `fee-${student.studentId}-${installmentNumber}-${now.getTime()}`,
+      config
+    })
+    : null;
   const order = new models.MockPaymentOrder({
     studentId: student.studentId,
     parentUserId: parent.id,
@@ -50,6 +63,9 @@ export async function createParentPaymentOrder(models, parent, installmentNumber
     installmentId: installment._id,
     amountPaise,
     transactionId: `MOCK-${randomUUID()}`,
+    provider,
+    providerOrderId: providerOrder?.id ?? null,
+    razorpayKeyId: provider === 'razorpay' ? config.RAZORPAY_KEY_ID : null,
     status: 'pending',
     expiresAt: new Date(now.getTime() + ORDER_LIFETIME_MS)
   });
@@ -79,6 +95,87 @@ export async function completeParentMockPayment(models, parent, callback, gatewa
   if (parent.role !== 'parent' || !parent.studentId) {
     throw new AppError(403, 'Only a parent account can complete a parent payment order');
   }
+
+  async function settleRazorpayOrder(models, order, {
+    paymentId,
+    status = 'completed',
+    now = new Date()
+  }) {
+    const session = await models.connection.startSession();
+    try {
+      let result;
+      await session.withTransaction(async () => {
+        const current = await models.MockPaymentOrder.findOne({
+          _id: order._id,
+          provider: 'razorpay'
+        }).session(session);
+        if (!current) throw new AppError(404, 'Payment order not found');
+        if (['completed', 'failed', 'cancelled'].includes(current.status)) {
+          result = { status: current.status, order: publicOrder(current), duplicate: true };
+          return;
+        }
+        if (status !== 'completed') {
+          current.status = status;
+          current.providerPaymentId = paymentId || current.providerPaymentId;
+          current.completedAt = now;
+          await current.save({ session });
+          result = { status, order: publicOrder(current) };
+          return;
+        }
+        const plan = await models.FeePlan.findOne({ studentId: current.studentId }).session(session);
+        const student = await models.Student.findOne({ studentId: current.studentId, isActive: true }).session(session);
+        if (!plan || !student) throw new AppError(404, 'Student or fee plan not found');
+        const installment = plan.installments.find((entry) =>
+          entry.installmentNumber === current.installmentNumber &&
+          entry._id.toString() === current.installmentId.toString()
+        );
+        if (!installment || installment.amountPaise - installment.paidAmountPaise !== current.amountPaise) {
+          throw new AppError(409, 'The instalment balance changed; reconciliation is required');
+        }
+        installment.paidAmountPaise += current.amountPaise;
+        installment.status = getInstallmentStatus(installment, now);
+        const payment = new models.Payment({
+          studentId: current.studentId,
+          installmentId: installment._id,
+          amountPaise: current.amountPaise,
+          transactionId: paymentId,
+          provider: 'razorpay',
+          providerOrderId: current.providerOrderId,
+          providerPaymentId: paymentId,
+          paymentMethod: 'upi',
+          status: 'completed',
+          paidAt: now
+        });
+        installment.payments.push(payment._id);
+        await plan.save({ session });
+        await payment.save({ session });
+        current.status = 'completed';
+        current.providerPaymentId = paymentId;
+        current.paymentId = payment._id;
+        current.completedAt = now;
+        await current.save({ session });
+        result = {
+          status: 'completed',
+          order: publicOrder(current),
+          payment: {
+            id: payment._id,
+            studentId: payment.studentId,
+            installmentNumber: current.installmentNumber,
+            amountPaise: payment.amountPaise,
+            transactionId: payment.transactionId,
+            paidAt: payment.paidAt
+          }
+        };
+      });
+      return result;
+    } catch (error) {
+      if (error.code === 11000) throw new AppError(409, 'Provider payment has already been recorded');
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+  }
+
   if (!verifyMockGatewayCallback(callback, gatewaySecret) ||
       callback.parentUserId !== parent.id || callback.studentId !== parent.studentId) {
     throw new AppError(400, 'Invalid mock gateway confirmation');
@@ -178,6 +275,57 @@ export async function completeParentMockPayment(models, parent, callback, gatewa
   } finally {
     await session.endSession();
   }
+}
+
+export async function completeRazorpayPayment(models, parent, details, config, now = new Date()) {
+  if (parent.role !== 'parent' || !parent.studentId) {
+    throw new AppError(403, 'Only a parent account can complete a parent payment order');
+  }
+  if (!verifyRazorpayPaymentSignature(details, config.RAZORPAY_KEY_SECRET)) {
+    throw new AppError(400, 'Invalid Razorpay payment signature');
+  }
+  const order = await models.MockPaymentOrder.findOne({
+    provider: 'razorpay',
+    providerOrderId: details.orderId,
+    parentUserId: parent.id,
+    studentId: parent.studentId
+  }).lean();
+  if (!order) throw new AppError(404, 'Payment order not found');
+  if (order.expiresAt <= now) throw new AppError(409, 'Payment order has expired');
+  return settleRazorpayOrder(models, order, { paymentId: details.paymentId, now });
+}
+
+export async function processRazorpayWebhook(models, payload, now = new Date()) {
+  const entity = payload?.payload?.payment?.entity;
+  const orderId = entity?.order_id;
+  const paymentId = entity?.id;
+  if (!orderId || !paymentId) return { status: 'ignored' };
+  const status = payload.event === 'payment.failed' ? 'failed' :
+    payload.event === 'payment.pending' ? 'pending' :
+      payload.event === 'payment.cancelled' ? 'cancelled' :
+    payload.event === 'payment.authorized' ? 'authorized' :
+      payload.event === 'payment.captured' ? 'completed' : null;
+  if (!status) return { status: 'ignored' };
+  const order = await models.MockPaymentOrder.findOne({ provider: 'razorpay', providerOrderId: orderId }).lean();
+  if (!order) return { status: 'ignored' };
+  return settleRazorpayOrder(models, order, { paymentId, status, now });
+}
+
+export async function reconcileRazorpayPayments(models) {
+  const [orders, payments] = await Promise.all([
+    models.MockPaymentOrder.find({ provider: 'razorpay' }).lean(),
+    models.Payment.find({ provider: 'razorpay' }).lean()
+  ]);
+  const paymentIds = new Set(payments.map((payment) => payment.providerPaymentId).filter(Boolean));
+  const exceptions = orders
+    .filter((order) => order.status === 'completed' && (!order.providerPaymentId || !paymentIds.has(order.providerPaymentId)))
+    .map((order) => ({ orderId: order._id, providerOrderId: order.providerOrderId, reason: 'completed order has no matching payment ledger entry' }));
+  return {
+    providerOrders: orders.length,
+    ledgerPayments: payments.length,
+    exceptions,
+    reconciled: exceptions.length === 0
+  };
 }
 
 function escapeHtml(value) {

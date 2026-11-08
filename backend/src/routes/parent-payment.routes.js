@@ -5,6 +5,7 @@ import { validate } from '../lib/validation.js';
 import { createAuthenticate } from '../middleware/authenticate.js';
 import {
   createParentPaymentOrder,
+  completeRazorpayPayment,
   getParentPaymentReceipt,
   simulateParentMockPayment
 } from '../services/parent-payments.js';
@@ -21,7 +22,7 @@ export function createParentPaymentRouter(models, config) {
   router.use(createAuthenticate({ User: models.User, jwtSecret: config.JWT_SECRET }));
 
   router.post('/orders', validate(createOrderSchema), asyncHandler(async (req, res) => {
-    const order = await createParentPaymentOrder(models, req.user, req.body.installmentNumber);
+    const order = await createParentPaymentOrder(models, req.user, req.body.installmentNumber, new Date(), config);
     res.status(201).json({ order });
   }));
   router.post('/orders/:orderId/complete', validate(completeOrderSchema), asyncHandler(async (req, res) => {
@@ -32,6 +33,19 @@ export function createParentPaymentRouter(models, config) {
     const result = await simulateParentMockPayment(
       models, req.user, req.params.orderId, req.body.outcome, config.JWT_SECRET
     );
+    res.json(result);
+  }));
+  router.post('/razorpay/verify', validate(z.object({
+    razorpay_order_id: z.string().trim().min(1).max(80),
+    razorpay_payment_id: z.string().trim().min(1).max(80),
+    razorpay_signature: z.string().trim().min(1).max(128)
+  }).strict()), asyncHandler(async (req, res) => {
+    if (config.PAYMENT_PROVIDER !== 'razorpay') return res.status(404).json({ error: 'Payment gateway is disabled' });
+    const result = await completeRazorpayPayment(models, req.user, {
+      orderId: req.body.razorpay_order_id,
+      paymentId: req.body.razorpay_payment_id,
+      signature: req.body.razorpay_signature
+    }, config);
     res.json(result);
   }));
   router.get('/receipts/:paymentId', asyncHandler(async (req, res) => {

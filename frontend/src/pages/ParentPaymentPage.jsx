@@ -64,6 +64,49 @@ export default function ParentPaymentPage({ user }) {
         setPayment(data.payment);
         await loadLedger();
       }
+
+      async function startRazorpayCheckout() {
+        setError('');
+        setProcessing(true);
+        try {
+          if (!window.Razorpay) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+              script.onload = resolve;
+              script.onerror = () => reject(new Error('Razorpay checkout could not load'));
+              document.head.appendChild(script);
+            });
+          }
+          await new Promise((resolve, reject) => {
+            const checkout = new window.Razorpay({
+              key: order.razorpayKeyId,
+              amount: order.amountPaise,
+              currency: order.currency,
+              name: 'FeeFlow AI',
+              order_id: order.providerOrderId,
+              handler: async (response) => {
+                try {
+                  const { data } = await api.post('/parent-payments/razorpay/verify', response);
+                  setOrder(data.order);
+                  setPayment(data.payment);
+                  await loadLedger();
+                  resolve();
+                } catch (requestError) {
+                  reject(requestError);
+                }
+              },
+              modal: { ondismiss: () => reject(new Error('Payment checkout was cancelled')) }
+            });
+            checkout.on('payment.failed', () => reject(new Error('Payment failed; no fee was recorded')));
+            checkout.open();
+          });
+        } catch (requestError) {
+          setError(getApiError(requestError));
+        } finally {
+          setProcessing(false);
+        }
+      }
     } catch (requestError) {
       setError(getApiError(requestError));
       if (requestError.response?.status === 409) {
@@ -112,16 +155,20 @@ export default function ParentPaymentPage({ user }) {
 
       {order?.status === 'pending' && (
         <section className="panel mock-checkout">
-          <div className="panel-heading"><div><h2>Mock payment checkout</h2><p>Development simulator only · no real money is charged</p></div></div>
+          <div className="panel-heading"><div><h2>{order.provider === 'razorpay' ? 'Razorpay sandbox checkout' : 'Mock payment checkout'}</h2><p>{order.provider === 'razorpay' ? 'Sandbox only · no production payment credentials are used' : 'Development simulator only · no real money is charged'}</p></div></div>
           <div className="mock-order-summary">
             <span>Payable amount</span><strong>{formatPaise(order.amountPaise)}</strong>
             <span>Server-generated transaction</span><code>{order.transactionId}</code>
             <span>Order expires</span><span>{formatDate(order.expiresAt)}</span>
           </div>
-          <p className="mock-checkout-note">Choose a simulated result. The backend checks this pending order and its stored amount; the browser cannot submit a payment amount or transaction ID.</p>
+          <p className="mock-checkout-note">{order.provider === 'razorpay' ? 'The gateway controls the payment details. The backend verifies the signed callback and server-stored amount.' : 'Choose a simulated result. The backend checks this pending order and its stored amount; the browser cannot submit a payment amount or transaction ID.'}</p>
           <div className="mock-checkout-actions">
-            <button className="mock-fail-button" disabled={processing} onClick={() => completeOrder('failure')} type="button">{processing ? 'Processing…' : 'Simulate failure'}</button>
-            <button className="parent-pay-button" disabled={processing} onClick={() => completeOrder('success')} type="button">{processing ? 'Processing…' : 'Simulate success'}</button>
+            {order.provider === 'razorpay' ? (
+              <button className="parent-pay-button" disabled={processing} onClick={startRazorpayCheckout} type="button">{processing ? 'Opening checkout…' : 'Pay with Razorpay sandbox'}</button>
+            ) : (<>
+              <button className="mock-fail-button" disabled={processing} onClick={() => completeOrder('failure')} type="button">{processing ? 'Processing…' : 'Simulate failure'}</button>
+              <button className="parent-pay-button" disabled={processing} onClick={() => completeOrder('success')} type="button">{processing ? 'Processing…' : 'Simulate success'}</button>
+            </>)}
           </div>
         </section>
       )}

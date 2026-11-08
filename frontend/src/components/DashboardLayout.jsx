@@ -36,6 +36,11 @@ export default function DashboardLayout({ user, onSignOut }) {
               <span aria-hidden="true">✦</span> Fee assistant
             </NavLink>
           )}
+          {user.role === 'accounts' && (
+            <NavLink aria-label="User management" title="User management" to="/user-management" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <span aria-hidden="true">◎</span> User management
+            </NavLink>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <span className="avatar">{user.name.slice(0, 1).toUpperCase()}</span>

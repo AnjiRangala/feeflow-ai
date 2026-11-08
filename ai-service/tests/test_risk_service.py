@@ -2,6 +2,7 @@ import asyncio
 
 import httpx
 
+from app import main
 from app.main import app
 
 def request(method, path, **kwargs):
@@ -80,3 +81,19 @@ def test_missing_student_identifier_and_out_of_range_features_are_rejected():
     assert request("POST", "/predict-risk", json=missing).status_code == 422
     assert request("POST", "/predict-risk", json=complete_features(attendancePercentage=140)).status_code == 422
     assert request("POST", "/predict-risk", json=complete_features(unexpectedField=1)).status_code == 422
+
+
+def test_predict_requires_service_token_when_configured():
+    previous = main.AI_SERVICE_TOKEN
+    main.AI_SERVICE_TOKEN = "test-service-token"
+    try:
+        assert request("POST", "/predict-risk", json=complete_features()).status_code == 401
+        response = request(
+            "POST",
+            "/predict-risk",
+            headers={"Authorization": "Bearer test-service-token"},
+            json=complete_features(),
+        )
+        assert response.status_code == 200
+    finally:
+        main.AI_SERVICE_TOKEN = previous

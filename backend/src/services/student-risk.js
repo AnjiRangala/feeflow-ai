@@ -70,6 +70,7 @@ function validateAssessment(result, studentId) {
 export async function createStudentRiskAssessment(models, studentId, {
   fetchImpl = globalThis.fetch,
   serviceUrl,
+  serviceToken,
   timeoutMs = 5_000,
   actorId,
   now = new Date()
@@ -83,7 +84,10 @@ export async function createStudentRiskAssessment(models, studentId, {
   try {
     response = await fetchImpl(`${serviceUrl.replace(/\/+$/, '')}/predict-risk`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(serviceToken ? { Authorization: `Bearer ${serviceToken}` } : {})
+      },
       body: JSON.stringify(features),
       signal: AbortSignal.timeout(timeoutMs)
     });

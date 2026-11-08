@@ -2,6 +2,8 @@
 
 A coaching-institute fee management system with a React parent/accounts/counsellor portal, an Express API, MongoDB/Mongoose models, a local FastAPI student-support rules baseline, OTP sign-in, a paise-based fee ledger, mock payments and reminders, refund review, and accounts dashboards.
 
+Read [security-audit-report.md](./security-audit-report.md), [production-readiness-report.md](./production-readiness-report.md), [deployment-guide.md](./deployment-guide.md), [application-testing-report.md](./application-testing-report.md), [docs/operations-runbook.md](./docs/operations-runbook.md), and [docs/external-integration-checklist.md](./docs/external-integration-checklist.md) for the current audit evidence and production checklist.
+
 ## Requirements
 
 - Node.js 20.19+ or 22.12+

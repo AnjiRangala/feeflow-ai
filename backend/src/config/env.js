@@ -24,6 +24,11 @@ const schema = z.object({
       (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || privateServiceName);
   }, 'must point to localhost or a private single-label service; public AI providers are not supported'),
   AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
+  AI_SERVICE_TOKEN: z.string().min(32).optional(),
+  PAYMENT_PROVIDER: z.enum(['mock', 'razorpay']).default('mock'),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   REFUND_POLICY_VERSION: z.string().trim().min(1).max(80).default('demo-pro-rata-v1'),
   MOCK_PAYMENTS_ENABLED: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   REMINDER_SCHEDULE_OFFSETS_DAYS: integerList
@@ -61,7 +66,27 @@ export function loadConfig(source = process.env) {
     const details = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
     throw new Error(`Invalid environment configuration: ${details}`);
   }
-  return parsed.data;
+  const config = parsed.data;
+  if (config.NODE_ENV === 'production') {
+    if (config.MOCK_PAYMENTS_ENABLED || config.PAYMENT_PROVIDER !== 'razorpay') {
+      throw new Error('Production requires PAYMENT_PROVIDER=razorpay and MOCK_PAYMENTS_ENABLED=false');
+    }
+    if (!config.RAZORPAY_KEY_ID || !config.RAZORPAY_KEY_SECRET || !config.RAZORPAY_WEBHOOK_SECRET) {
+      throw new Error('Production requires Razorpay credentials and webhook secret');
+    }
+    if (!config.AI_SERVICE_TOKEN) throw new Error('Production requires AI_SERVICE_TOKEN');
+    if (!config.SMTP_HOST || !config.SMTP_PORT || !config.SMTP_USER || !config.SMTP_PASSWORD || !config.SMTP_FROM) {
+      throw new Error('Production requires authenticated SMTP configuration');
+    }
+    if (new URL(config.FRONTEND_URL).protocol !== 'https:') {
+      throw new Error('Production FRONTEND_URL must use HTTPS');
+    }
+    if (new URL(config.MONGO_URI).protocol !== 'mongodb+srv:' &&
+        !/[?&]tls=true(?:&|$)/i.test(config.MONGO_URI)) {
+      throw new Error('Production MONGO_URI must enable TLS');
+    }
+  }
+  return config;
 }
 
 export const config = loadConfig();

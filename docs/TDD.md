@@ -166,7 +166,7 @@ The login screen was rendered from the production build at 390×844, 768×1024, 
 - Frontend: Vite production build.
 - Optional database tests: seed/login/isolation against configured MongoDB, and an isolated-database test that creates/removes a uniquely named QA database.
 
-Current verification: backend 65 passed, 0 failed, 2 skipped; AI service 6 passed; frontend production build passed; local FastAPI `/health` and `/predict-risk` smoke checks returned the explainable rules baseline and expected HIGH/82 sample. The disposable MongoDB test was attempted but skipped because MongoDB authentication failed (`bad auth: Authentication failed`). No current live database workflow or end-to-end payment transaction was verified.
+Current verification: backend 85 tests, 83 passed, 0 failed, 2 documented skips; AI service 7 passed; frontend production build passed; Playwright 6 passed; focused payment/refund/provider tests 6 passed; JavaScript/Python syntax checks and `git diff --check` passed. The local browser tests use synthetic API fixtures, and external provider, SMTP, deployment, and production database acceptance remain unverified.
 
 ## 17. Security measures
 
@@ -183,7 +183,33 @@ The repository workspace has no Git metadata, so this pass could not inspect com
 - Risk scores are deterministic rules and not dropout probabilities.
 - Production deployment must supply transaction-capable MongoDB, SMTP and secure environment configuration.
 
-## 19. Limitations
+## 19. Assignment compliance audit
+
+| Assignment requirement | Status | Evidence or limitation |
+|---|---|---|
+| Fee ledger and integer-paise balances | Implemented and verified | Server-derived plans, installment balances, payments, receipts, and ledger tests |
+| Three/four-installment rules | Implemented and verified | Validated plan creation and deterministic remainder handling |
+| Parent OTP login | Implemented but not externally verified | OTP expiry, HMAC, attempts, and atomic consumption are tested; SMTP delivery is not |
+| Parent dues and payment links | Implemented and verified locally | Parent-owned mock order flow and receipt tests |
+| Reminder automation and cancellation after payment | Implemented and verified locally | Idempotent schedules, mock delivery state, and transactional cancellation |
+| Pro-rata refund calculator | Implemented and verified locally | Ledger-backed policy snapshot and validation tests |
+| Centre/batch Accounts dashboard | Implemented and verified locally | Aggregates, trends, ageing, CSV export, and browser dashboard tests |
+| AI dropout-risk flag | Implemented and verified locally | Explainable rules baseline creates counsellor tasks only |
+| False-positive handling | Implemented and verified locally | Counsellor `valid`/`false_flag` feedback is persisted |
+| Hindi/English support | Partially implemented | Reminder language preference exists; full localization is not present |
+| GST receipts | Partially implemented | Receipts include configurable GST note; tax calculation/registration is not implemented |
+| DPDP parental consent | Not implemented | No consent record or consent workflow exists |
+| Tally export | Not implemented | Accounts CSV export exists; Tally-specific export does not |
+| Attendance/test-score upload | Partially implemented | Fields are consumed by risk logic; upload workflow is not present |
+| Unmatched payment Accounts queue | Not implemented | No unmatched-payment queue or reconciliation UI exists |
+
+The core build was prioritized around a reliable ledger, parent visibility,
+payment/reminder lifecycle, refund transparency, Accounts operations, and
+human-reviewed risk support. The excluded items require additional product,
+legal, provider, or data-governance decisions and were not represented as
+implemented.
+
+## 20. Limitations
 
 - No verified public GitHub URL, deployment URL or accessible hosted application was found.
 - Current MongoDB authentication failed; seed idempotency, real persistence, Atlas permissions and transaction support remain unverified.
@@ -192,6 +218,6 @@ The repository workspace has no Git metadata, so this pass could not inspect com
 - No historical labelled risk dataset or real predictive validation exists.
 - Authenticated browser E2E, production security testing and deployment were not completed.
 
-## 20. Future improvements
+## 21. Future improvements
 
 Connect a verified project remote and review its history; deploy to a selected hosting provider; add a transaction-capable test database and CI integration environment; integrate a real payment provider using signed callbacks and reconciliation; adopt institution-approved refund policy; add real messaging only with consent and delivery governance; conduct accessibility and viewport testing; and evaluate risk support with representative, consented, audited historical data before any predictive use.

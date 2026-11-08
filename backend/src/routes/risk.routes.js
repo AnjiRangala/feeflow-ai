@@ -43,6 +43,7 @@ export function createRiskRouter(models, config, { fetchImpl = globalThis.fetch 
     const result = await createStudentRiskAssessment(models, req.body.studentId, {
       fetchImpl,
       serviceUrl: config.AI_SERVICE_URL,
+      serviceToken: config.AI_SERVICE_TOKEN,
       timeoutMs: config.AI_SERVICE_TIMEOUT_MS,
       actorId: req.user.id
     });

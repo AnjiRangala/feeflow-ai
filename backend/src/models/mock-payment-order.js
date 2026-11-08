@@ -7,7 +7,10 @@ const mockPaymentOrderSchema = new mongoose.Schema({
   installmentId: { type: mongoose.Schema.Types.ObjectId, required: true },
   amountPaise: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
   transactionId: { type: String, required: true, unique: true },
-  status: { type: String, enum: ['pending', 'completed', 'failed'], required: true, default: 'pending' },
+  provider: { type: String, enum: ['mock', 'razorpay'], default: 'mock' },
+  providerOrderId: { type: String, default: null, index: true },
+  providerPaymentId: { type: String, default: null },
+  status: { type: String, enum: ['pending', 'authorized', 'completed', 'failed', 'cancelled'], required: true, default: 'pending' },
   paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
   expiresAt: { type: Date, required: true },
   completedAt: { type: Date, default: null }

@@ -8,3 +8,5 @@ export { CounsellorTask } from './counsellor-task.js';
 export { RiskAssessment } from './risk-assessment.js';
 export { MockPaymentOrder } from './mock-payment-order.js';
 export { OtpChallenge } from './otp-challenge.js';
+export { Invitation } from './invitation.js';
+export { PaymentWebhookEvent } from './payment-webhook-event.js';

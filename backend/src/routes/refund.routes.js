@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppError, asyncHandler } from '../lib/errors.js';
 import { validate } from '../lib/validation.js';
 import { createAuthenticate, requireRole } from '../middleware/authenticate.js';
-import { createRefundCalculation, reviewRefund } from '../services/refunds.js';
+import { createRefundCalculation, processRazorpayRefund, reviewRefund } from '../services/refunds.js';
 
 const createSchema = z.object({
   studentId: z.string().trim().min(1).max(40),
@@ -64,6 +64,12 @@ export function createRefundRouter(models, config) {
       reviewNote: req.body.reviewNote
     });
     res.json({ refund, disbursement: 'not_issued' });
+  }));
+  router.post('/:refundId/process', asyncHandler(async (req, res) => {
+    if (config.PAYMENT_PROVIDER !== 'razorpay') return res.status(404).json({ error: 'Payment gateway is disabled' });
+    assertObjectId(req.params.refundId);
+    const refund = await processRazorpayRefund(models, req.params.refundId, req.user.id, config);
+    res.json({ refund });
   }));
 
   return router;

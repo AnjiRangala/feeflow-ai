@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../lib/errors.js';
 import { sumSafeIntegers } from '../lib/fee-ledger.js';
+import { createRazorpayRefund } from './payment-provider.js';
 
 const DAY_MS = 86_400_000;
 const REFUND_ASSUMPTION = 'Demonstration assumption only: completed days are whole UTC calendar-day differences from course start to withdrawal, clamped to 0..course duration; the withdrawal date itself is not counted as an additional day.';
@@ -136,10 +138,75 @@ export async function reviewRefund(models, refundId, reviewerId, { decision, rev
         reviewedAt: now,
         reviewNote: reviewNote || null
       }
+
     },
     { new: true, runValidators: true }
   );
   if (refund) return refund;
   if (!await models.Refund.exists({ _id: refundId })) throw new AppError(404, 'Refund calculation not found');
   throw new AppError(409, 'Refund calculation has already been reviewed');
+}
+
+export async function processRazorpayRefund(models, refundId, reviewerId, config, now = new Date()) {
+  const existingRefund = await models.Refund.findOne({ _id: refundId, status: 'approved' }).lean();
+  if (!existingRefund) {
+    if (!await models.Refund.exists({ _id: refundId })) {
+      throw new AppError(404, 'Refund calculation not found');
+    }
+    throw new AppError(409, 'Refund is already being processed or has been processed');
+  }
+  const payment = await models.Payment.findOne({
+    studentId: existingRefund.studentId,
+    provider: 'razorpay',
+    status: 'completed'
+  }).sort({ paidAt: -1 }).lean();
+  if (!payment?.providerPaymentId) throw new AppError(409, 'No settled Razorpay payment is available for this refund');
+
+  const providerRequestId = randomUUID();
+  const refund = await models.Refund.findOneAndUpdate(
+    { _id: refundId, status: 'approved', providerRefundId: { $exists: false } },
+    {
+      $set: {
+        status: 'processing',
+        providerRequestId,
+        processingStartedAt: now,
+        processingError: null,
+        reviewedBy: reviewerId
+      }
+    },
+    { new: true, runValidators: true }
+  ).lean();
+  if (!refund) {
+    if (!await models.Refund.exists({ _id: refundId })) {
+      throw new AppError(404, 'Refund calculation not found');
+    }
+    throw new AppError(409, 'Refund is already being processed or has been processed');
+  }
+  try {
+    const providerRefund = await createRazorpayRefund({
+      paymentId: payment.providerPaymentId,
+      amountPaise: refund.refundAmountPaise,
+      config,
+      idempotencyKey: providerRequestId
+    });
+    return await models.Refund.findOneAndUpdate(
+      { _id: refundId, status: 'processing', providerRequestId },
+      {
+        $set: {
+          status: 'processed',
+          provider: 'razorpay',
+          providerRefundId: providerRefund.id,
+          processedAt: now,
+          processingError: null
+        }
+      },
+      { new: true, runValidators: true }
+    );
+  } catch (error) {
+    await models.Refund.updateOne(
+      { _id: refundId, status: 'processing', providerRequestId },
+      { $set: { processingError: error.message?.slice(0, 500) || 'Provider refund failed' } }
+    );
+    throw error;
+  }
 }

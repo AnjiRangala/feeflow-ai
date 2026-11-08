@@ -1,4 +1,4 @@
-import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -6,6 +6,14 @@ const PASSWORD_ROUNDS = 12;
 
 export function hashPassword(password) {
   return bcrypt.hash(password, PASSWORD_ROUNDS);
+}
+
+export function createInvitationToken() {
+  return randomBytes(32).toString('base64url');
+}
+
+export function hashInvitationToken(token) {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 export function comparePassword(password, passwordHash) {

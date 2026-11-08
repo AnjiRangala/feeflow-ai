@@ -35,7 +35,19 @@ export async function startLiveMongoApp() {
   if (!process.env.DEMO_PARENT_PASSWORD || !process.env.DEMO_ACCOUNTS_PASSWORD) {
     throw new Error('Configured demo passwords are unavailable');
   }
-  await mongoose.connect(config.MONGO_URI, { serverSelectionTimeoutMS: 15_000 });
+  let connectionError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await mongoose.connect(config.MONGO_URI, { serverSelectionTimeoutMS: 15_000 });
+      connectionError = null;
+      break;
+    } catch (error) {
+      connectionError = error;
+      if (mongoose.connection.readyState !== 0) await mongoose.disconnect();
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+  if (connectionError) throw connectionError;
   if (mongoose.connection.name !== 'feeflow_ai') {
     await mongoose.disconnect();
     throw new Error('Connected database does not match feeflow_ai');
