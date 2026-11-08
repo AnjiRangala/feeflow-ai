@@ -1,6 +1,6 @@
 # FeeFlow AI — Technical Design Document
 
-**Public GitHub repository:** Not available in this checkout. The workspace has no Git metadata or configured remote; replace this notice with the verified public repository URL before publishing.
+**Public GitHub repository:** https://github.com/AnjiRangala/feeflow-ai
 
 **Deployed application:** Not verified. No live application URL is available.
 
@@ -172,7 +172,7 @@ Current verification: backend 85 tests, 83 passed, 0 failed, 2 documented skips;
 
 The API uses Helmet, a configured single-origin CORS policy, JSON body-size limit, strict Zod schemas, parameterized Mongoose filters, bcrypt password hashes, OTP HMAC/expiry/attempt limits, JWT validation, and role middleware. Authentication endpoints use a 10-request/15-minute limiter. SMTP requires STARTTLS unless implicit TLS is configured. `.env` files and build/dependency artifacts are ignored; only variable names appear in example files.
 
-The repository workspace has no Git metadata, so this pass could not inspect commit history or prove whether secrets were ever committed. Do not publish until repository history is checked in the actual Git checkout. Configure HTTPS, least-privilege database access, SMTP and production secrets at deployment.
+The public repository preserves the existing local Git history and was published without force-pushing. Repository publication checks found no tracked environment files, private keys, or live credential patterns. Configure HTTPS, least-privilege database access, SMTP and production secrets at deployment.
 
 ## 18. Assumptions
 
